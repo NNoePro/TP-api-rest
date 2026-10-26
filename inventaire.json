@@ -1,0 +1,59 @@
+{
+    "date_releve": "2026-10-26T09:56:45.560884+00:00",
+    "docker": {
+        "conteneurs": [
+            {
+                "id": "f1ce02557f8328972e8dfebc56656d22220a2836eb2ad39c12797e0a00ef528d",
+                "nom": "/intrus",
+                "image": "nginx:alpine",
+                "etat": "running",
+                "cpu_percent": 0.0,
+                "memoire_mio": 8.7
+            },
+            {
+                "id": "0b08e46bcb2f40906539e3c1ffc16518e999595c51c05eb69fe0af807b538aa5",
+                "nom": "/web1",
+                "image": "nginx:alpine",
+                "etat": "exited",
+                "cpu_percent": null,
+                "memoire_mio": null
+            },
+            {
+                "id": "dfeb0132e20dc6e2e027a9f2adf3876e870b7034d5395c8d035d1541effab633",
+                "nom": "/apirest-netbox-1",
+                "image": "netboxcommunity/netbox:v4.7-5.1.1",
+                "etat": "running",
+                "cpu_percent": 0.0,
+                "memoire_mio": 1473.04
+            },
+            {
+                "id": "3cc5c5816755855b122f9fddea4bbd53b49f8b38b9d547264f07e263b5190584",
+                "nom": "/apirest-netbox-postgres-1",
+                "image": "postgres:17-alpine",
+                "etat": "running",
+                "cpu_percent": 1.86,
+                "memoire_mio": 199.91
+            },
+            {
+                "id": "f14e13b67db761dcecd4108e73f6e0ddc9d271e8ccb0e85de125699d7b4d170d",
+                "nom": "/apirest-docker-api-1",
+                "image": "tecnativa/docker-socket-proxy:v0.4.2",
+                "etat": "running",
+                "cpu_percent": 0.0,
+                "memoire_mio": 38.52
+            },
+            {
+                "id": "03bd90ef79766184d7efb9cab02ffb66aa13c561476019a7f02e8d6e578bc937",
+                "nom": "/apirest-netbox-redis-1",
+                "image": "valkey/valkey:8-alpine",
+                "etat": "running",
+                "cpu_percent": 0.2,
+                "memoire_mio": 35.6
+            }
+        ]
+    },
+    "netbox": {
+        "version": "4.7.3",
+        "nombre_types_objets": 163
+    }
+}
