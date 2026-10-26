@@ -1,20 +1,8 @@
 TP1 — Exploration des API Docker et NetBox
 
-1. Objectifs du TP
 
-Ce TP a pour objectif de découvrir les API REST de Docker et de NetBox, d’effectuer des requêtes HTTP manuelles et d’analyser les réponses obtenues.
 
-Les manipulations réalisées permettent notamment de :
-
-* Explorer l’API Docker à l’aide de requêtes HTTP.
-* Créer et identifier des conteneurs Docker.
-* Filtrer les conteneurs à l’aide de labels.
-* Observer les codes HTTP associés aux différentes opérations.
-* Authentifier des requêtes auprès de l’API NetBox.
-* Créer un type de cluster et un cluster dans NetBox.
-* Vérifier que les objets créés sont accessibles via l’API.
-
-2. Environnement de travail
+1. Environnement de travail
 
 Composant	Adresse ou configuration
 Système de travail	macOS sur Apple Silicon
@@ -27,9 +15,9 @@ Cluster créé	docker-local
 
 Les commandes ont été exécutées dans un terminal depuis le répertoire du projet TP-api-rest.
 
-3. Exploration de l’API Docker
+2. Exploration de l’API Docker
 
-3.1. Création des conteneurs
+2.1. Création des conteneurs
 
 Deux conteneurs Nginx ont été créés pour distinguer les conteneurs gérés par l’application des conteneurs non gérés.
 
@@ -43,7 +31,7 @@ docker run -d --name intrus nginx:alpine
 
 Le conteneur web1 représente un conteneur géré par l’application. Le conteneur intrus sert de contre-exemple pour les tests de filtrage.
 
-3.2. Vérification des labels
+2.2. Vérification des labels
 
 La commande suivante permet de consulter le nom et les labels des deux conteneurs :
 
@@ -51,7 +39,7 @@ docker inspect --format '{{.Name}} {{json .Config.Labels}}' web1 intrus
 
 Le résultat a confirmé que web1 possède le label adminapi.managed=true, contrairement à intrus.
 
-3.3. Vérification de l’accessibilité de l’API Docker
+2.3. Vérification de l’accessibilité de l’API Docker
 
 La commande suivante permet de consulter la version du moteur Docker :
 
@@ -63,7 +51,7 @@ La réponse contient notamment la version du moteur Docker (29.7.2) et la versio
 
 Ce test confirme que l’API Docker est accessible depuis l’environnement de travail.
 
-3.4. Liste de tous les conteneurs
+2.4. Liste de tous les conteneurs
 
 Pour afficher tous les conteneurs, y compris ceux qui sont arrêtés, la commande suivante a été utilisée :
 
@@ -75,7 +63,7 @@ La réponse JSON contient les informations des conteneurs présents sur l’hôt
 
 Le paramètre all=true permet également d’inclure les conteneurs qui ne sont pas en cours d’exécution.
 
-3.5. Filtrage des conteneurs par label
+2.5. Filtrage des conteneurs par label
 
 Pour ne récupérer que les conteneurs possédant le label adminapi.managed=true, la commande suivante a été exécutée :
 
@@ -89,7 +77,7 @@ Seul web1 apparaît dans la réponse. Le conteneur intrus est exclu puisqu’il 
 
 Ce mécanisme permet de distinguer les conteneurs administrés par l’application des autres conteneurs présents sur l’hôte.
 
-3.6. Consultation des informations d’un conteneur
+2.6. Consultation des informations d’un conteneur
 
 Pour récupérer les informations détaillées de web1, la commande suivante a été exécutée :
 
@@ -107,7 +95,7 @@ La réponse JSON contient notamment :
 
 Cette requête permet de consulter l’état et la configuration d’un conteneur précis.
 
-3.7. Arrêt d’un conteneur en cours d’exécution
+2.7. Arrêt d’un conteneur en cours d’exécution
 
 La commande suivante a été utilisée pour arrêter web1 :
 
@@ -119,7 +107,7 @@ Le code 204 indique que l’opération a réussi et que la réponse ne contient 
 
 Le conteneur a été arrêté.
 
-3.8. Tentative d’arrêt d’un conteneur déjà arrêté
+2.8. Tentative d’arrêt d’un conteneur déjà arrêté
 
 La même commande a été exécutée une seconde fois :
 
@@ -131,7 +119,7 @@ Dans cette installation, Docker renvoie le code 304 lorsque le conteneur est dé
 
 Ce résultat illustre l’importance de tester les opérations dans plusieurs états possibles.
 
-3.9. Tentative d’arrêt d’un conteneur inexistant
+2.9. Tentative d’arrêt d’un conteneur inexistant
 
 Pour tester le comportement de l’API lorsqu’un conteneur n’existe pas, la commande suivante a été exécutée :
 
@@ -147,7 +135,7 @@ La réponse JSON contient le message :
 
 Le code 404 indique que Docker ne trouve aucun conteneur correspondant au nom demandé.
 
-3.10. Synthèse des tests Docker
+2.10. Synthèse des tests Docker
 
 Opération	Méthode HTTP	Code observé	Interprétation
 Consulter la version Docker	GET	200 OK	L’API est accessible.
@@ -160,9 +148,9 @@ Arrêter un conteneur inexistant	POST	404 Not Found	Le conteneur n’existe pas.
 
 Ces résultats correspondent au comportement observé sur l’installation Docker utilisée pendant le TP.
 
-4. Exploration et configuration de NetBox
+3. Exploration et configuration de NetBox
 
-4.1. Vérification de l’API NetBox
+3.1. Vérification de l’API NetBox
 
 L’interface NetBox est accessible à l’adresse suivante :
 
@@ -185,7 +173,7 @@ Authentification réussie : True
 
 Ce résultat confirme que NetBox est accessible et que le jeton utilisé permet d’accéder à son API.
 
-4.2. Découverte des endpoints de virtualisation
+3.2. Découverte des endpoints de virtualisation
 
 L’API de virtualisation a été consultée à l’adresse suivante :
 
@@ -198,7 +186,7 @@ La réponse a notamment indiqué la présence des endpoints :
 
 Le premier permet de gérer les types de clusters. Le second permet de gérer les clusters.
 
-4.3. Consultation des types de clusters
+3.3. Consultation des types de clusters
 
 La collection des types de clusters a été consultée dans le navigateur :
 
@@ -216,7 +204,7 @@ Résultat observé : HTTP 200 OK.
 
 Les champs obligatoires identifiés sont name et slug.
 
-4.4. Création du type de cluster Docker
+3.4. Création du type de cluster Docker
 
 Le type de cluster a été créé avec une requête POST. Le corps JSON contient le nom et le slug du type.
 
@@ -233,7 +221,7 @@ Identifiant	1
 
 Le code 201 Created confirme que le nouvel objet a été créé.
 
-4.5. Découverte des champs de création d’un cluster
+3.5. Découverte des champs de création d’un cluster
 
 Avant de créer le cluster, une requête OPTIONS a été envoyée à la collection des clusters :
 
@@ -245,7 +233,7 @@ La réponse indique notamment que les champs name et type sont obligatoires. Le 
 
 Le type Docker ayant l’identifiant 1, cet identifiant peut être utilisé pour associer le cluster à son type.
 
-4.6. Création du cluster docker-local
+3.6. Création du cluster docker-local
 
 Le cluster a été créé avec le nom docker-local, le type Docker et le statut active.
 
@@ -264,7 +252,7 @@ Identifiant du cluster	1
 
 Le cluster a donc été créé et associé au type Docker.
 
-4.7. Vérification du cluster créé
+3.7. Vérification du cluster créé
 
 Une première requête sans authentification a été effectuée :
 
@@ -286,7 +274,7 @@ Statut : {'value': 'active', 'label': 'Active'}
 
 Cette vérification confirme que le cluster est enregistré dans NetBox et accessible avec une authentification valide.
 
-5. Sécurité et gestion des secrets
+4. Sécurité et gestion des secrets
 
 Le jeton API NetBox est stocké dans le fichier local .env.
 
