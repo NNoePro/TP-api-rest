@@ -1,5 +1,4 @@
-
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel, Field
 import requests
 import os
@@ -264,3 +263,51 @@ def start_container(id: str):
         "image": container.get("Config", {}).get("Image"),
         "state": container.get("State", {}).get("Status"),
     }
+
+@app.delete("/containers/{id}", status_code=204, response_class=Response)
+def delete_container(id: str):
+    # Vérifie l'existence du conteneur et son label adminapi.managed.
+    # Les HTTPException de get_container, notamment la 404, sont propagées.
+    try:
+        get_container(id)
+    except requests.RequestException as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Impossible de communiquer avec l'API Docker",
+        ) from exc
+
+    docker_api_url = os.getenv("DOCKER_API_URL")
+    if not docker_api_url:
+        raise HTTPException(
+            status_code=500,
+            detail="DOCKER_API_URL non configurée",
+        )
+
+    url = f"{docker_api_url}/containers/{id}"
+
+    try:
+        response = requests.delete(
+            url,
+            params={"force": "true"},
+            timeout=30,
+        )
+    except requests.RequestException as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Impossible de communiquer avec l'API Docker",
+        ) from exc
+
+    if response.status_code == 404:
+        raise HTTPException(
+            status_code=404,
+            detail="Conteneur introuvable ou non géré",
+        )
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Erreur de l'API Docker ({response.status_code})",
+        )
+
+    # Une réponse 204 ne doit pas avoir de corps.
+    return Response(status_code=204)
