@@ -187,3 +187,80 @@ def stop_container(id: str):
         "image": container.get("Config", {}).get("Image"),
         "state": container.get("State", {}).get("Status"),
     }
+
+@app.post("/containers/{id}/start")
+def start_container(id: str):
+    try:
+        # Vérifier que le conteneur existe et qu'il est géré par l'API
+        container = get_container(id)
+
+        if container["state"] == "running":
+            raise HTTPException(
+                status_code=409,
+                detail="Conteneur déjà démarré",
+            )
+
+        docker_api_url = os.getenv("DOCKER_API_URL")
+        if not docker_api_url:
+            raise HTTPException(
+                status_code=500,
+                detail="DOCKER_API_URL non configurée",
+            )
+
+        # Demander le démarrage du conteneur
+        start_url = f"{docker_api_url}/containers/{id}/start"
+        response = requests.post(start_url, timeout=30)
+
+        if response.status_code == 304:
+            raise HTTPException(
+                status_code=409,
+                detail="Conteneur déjà démarré",
+            )
+
+        if response.status_code == 404:
+            raise HTTPException(
+                status_code=404,
+                detail="Conteneur introuvable ou non géré",
+            )
+
+        if response.status_code >= 400:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Erreur de l'API Docker ({response.status_code})",
+            )
+
+        # Relire les informations réelles du conteneur
+        inspect_url = f"{docker_api_url}/containers/{id}/json"
+        inspect_response = requests.get(inspect_url, timeout=10)
+
+        if inspect_response.status_code == 404:
+            raise HTTPException(
+                status_code=404,
+                detail="Conteneur introuvable ou non géré",
+            )
+
+        if inspect_response.status_code >= 400:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Erreur de l'API Docker ({inspect_response.status_code})",
+            )
+
+        container = inspect_response.json()
+
+    except requests.RequestException as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Impossible de communiquer avec l'API Docker",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Réponse JSON invalide de l'API Docker",
+        ) from exc
+
+    return {
+        "id": container.get("Id"),
+        "name": container.get("Name", "").lstrip("/"),
+        "image": container.get("Config", {}).get("Image"),
+        "state": container.get("State", {}).get("Status"),
+    }
