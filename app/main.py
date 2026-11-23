@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException, Response, Depends
+
+from fastapi import FastAPI, HTTPException, Response, Depends, Header
 from pydantic import BaseModel, Field
 from app.securite import require_read, require_admin
 from app.netbox_client import create_vm, update_vm_status, delete_vm
@@ -14,10 +15,104 @@ class ContainerCreate(BaseModel):
     image: str = Field(pattern=r"^(nginx:alpine|redis:alpine|httpd:alpine)$")
 
 
+# Modèle pour les alertes webhook
+class Alerte(BaseModel):
+    alert: str = Field(pattern=r"^container_down$")
+    container: str = Field(pattern=r"^[a-z][a-z0-9-]{1,30}$")
+
+
 # GET /health
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+# POST /webhooks/alerts
+@app.post("/webhooks/alerts", status_code=202)
+def webhook_alert(
+    data: Alerte,
+    x_webhook_secret: str = Header(None, alias="X-Webhook-Secret"),
+):
+    secret = os.getenv("WEBHOOK_SECRET")
+
+    # Vérification du secret webhook
+    if not secret or x_webhook_secret != secret:
+        raise HTTPException(
+            status_code=401,
+            detail="Secret webhook invalide",
+        )
+
+    docker_api_url = os.getenv("DOCKER_API_URL")
+
+    if not docker_api_url:
+        raise HTTPException(
+            status_code=500,
+            detail="DOCKER_API_URL non configurée",
+        )
+
+    try:
+        # Recherche des conteneurs Docker
+        response = requests.get(
+            f"{docker_api_url}/containers/json?all=true",
+            timeout=10,
+        )
+        response.raise_for_status()
+
+        container_id = None
+
+        # Recherche du conteneur géré par l'API
+        for container in response.json():
+            names = [name.lstrip("/") for name in container.get("Names", [])]
+            labels = container.get("Labels") or {}
+
+            if (
+                data.container in names
+                and labels.get("adminapi.managed") == "true"
+            ):
+                container_id = container["Id"]
+                break
+
+        if not container_id:
+            raise HTTPException(
+                status_code=404,
+                detail="Conteneur introuvable ou non géré par l'API",
+            )
+
+        # Vérification de l'état réel du conteneur
+        response = requests.get(
+            f"{docker_api_url}/containers/{container_id}/json",
+            timeout=10,
+        )
+        response.raise_for_status()
+
+        container = response.json()
+
+        # Redémarrage si le conteneur est arrêté
+        if not container.get("State", {}).get("Running"):
+            response = requests.post(
+                f"{docker_api_url}/containers/{container_id}/start",
+                timeout=10,
+            )
+
+            if response.status_code not in (204, 304):
+                response.raise_for_status()
+
+        # Mise à jour du statut dans NetBox
+        update_vm_status(data.container, "active")
+
+    except HTTPException:
+        raise
+
+    except requests.RequestException as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Erreur de communication avec Docker ou NetBox",
+        ) from exc
+
+    return {
+        "status": "remediated",
+        "container": data.container,
+    }
 
 
 # GET /containers
