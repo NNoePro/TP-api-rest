@@ -1,5 +1,6 @@
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Response, Depends 
 from pydantic import BaseModel, Field
+from app.securite import require_read, require_admin
 import requests
 import os
 
@@ -20,7 +21,7 @@ def health():
 
 # GET /containers
 @app.get("/containers")
-def get_containers():
+def get_containers(role = Depends(require_read)):
     docker_api_url = os.getenv("DOCKER_API_URL")
     url = f"{docker_api_url}/containers/json?all=true"
 
@@ -46,7 +47,7 @@ def get_containers():
 
 # GET /containers/{id}
 @app.get("/containers/{id}")
-def get_container(id: str):
+def get_container(id: str, role = Depends(require_read)):
     for conteneur in get_containers():
         if conteneur["id"] == id:
             return conteneur
@@ -56,7 +57,7 @@ def get_container(id: str):
 
 # POST /containers
 @app.post("/containers", status_code=201)
-def create_container(data: ContainerCreate):
+def create_container(data: ContainerCreate, role = Depends(require_admin)):
     docker_api_url = os.getenv("DOCKER_API_URL")
 
     # Création du conteneur
@@ -106,7 +107,7 @@ def create_container(data: ContainerCreate):
     }
 
 @app.post("/containers/{id}/stop")
-def stop_container(id: str):
+def stop_container(id: str, role = Depends(require_admin)):
     try:
         # Cette fonction vérifie que le conteneur existe et porte
         # le label adminapi.managed=true.
@@ -188,7 +189,7 @@ def stop_container(id: str):
     }
 
 @app.post("/containers/{id}/start")
-def start_container(id: str):
+def start_container(id: str, role = Depends(require_admin)):
     try:
         # Vérifier que le conteneur existe et qu'il est géré par l'API
         container = get_container(id)
@@ -265,7 +266,7 @@ def start_container(id: str):
     }
 
 @app.delete("/containers/{id}", status_code=204, response_class=Response)
-def delete_container(id: str):
+def delete_container(id: str, role = Depends(require_admin)):
     # Vérifie l'existence du conteneur et son label adminapi.managed.
     # Les HTTPException de get_container, notamment la 404, sont propagées.
     try:
