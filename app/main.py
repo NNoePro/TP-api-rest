@@ -1,6 +1,7 @@
-from fastapi import FastAPI, HTTPException, Response, Depends 
+from fastapi import FastAPI, HTTPException, Response, Depends
 from pydantic import BaseModel, Field
 from app.securite import require_read, require_admin
+from app.netbox_client import create_vm, update_vm_status, delete_vm
 import requests
 import os
 
@@ -21,7 +22,7 @@ def health():
 
 # GET /containers
 @app.get("/containers")
-def get_containers(role = Depends(require_read)):
+def get_containers(role=Depends(require_read)):
     docker_api_url = os.getenv("DOCKER_API_URL")
     url = f"{docker_api_url}/containers/json?all=true"
 
@@ -47,7 +48,7 @@ def get_containers(role = Depends(require_read)):
 
 # GET /containers/{id}
 @app.get("/containers/{id}")
-def get_container(id: str, role = Depends(require_read)):
+def get_container(id: str, role=Depends(require_read)):
     for conteneur in get_containers():
         if conteneur["id"] == id:
             return conteneur
@@ -57,7 +58,7 @@ def get_container(id: str, role = Depends(require_read)):
 
 # POST /containers
 @app.post("/containers", status_code=201)
-def create_container(data: ContainerCreate, role = Depends(require_admin)):
+def create_container(data: ContainerCreate, role=Depends(require_admin)):
     docker_api_url = os.getenv("DOCKER_API_URL")
 
     # Création du conteneur
@@ -99,6 +100,9 @@ def create_container(data: ContainerCreate, role = Depends(require_admin)):
 
     container = container_response.json()
 
+    # Création de la VM dans NetBox
+    create_vm(data.name)
+
     return {
         "id": container.get("Id"),
         "name": container.get("Name", "").lstrip("/"),
@@ -106,14 +110,14 @@ def create_container(data: ContainerCreate, role = Depends(require_admin)):
         "state": container.get("State", {}).get("Status"),
     }
 
-@app.post("/containers/{id}/stop")
-def stop_container(id: str, role = Depends(require_admin)):
-    try:
-        # Cette fonction vérifie que le conteneur existe et porte
-        # le label adminapi.managed=true.
-        container = get_container(id)
 
-        if container["state"] == "exited":
+# POST /containers/{id}/stop
+@app.post("/containers/{id}/stop")
+def stop_container(id: str, role=Depends(require_admin)):
+    try:
+        container_info = get_container(id)
+
+        if container_info["state"] == "exited":
             raise HTTPException(
                 status_code=409,
                 detail="Conteneur déjà arrêté",
@@ -126,7 +130,7 @@ def stop_container(id: str, role = Depends(require_admin)):
                 detail="DOCKER_API_URL non configurée",
             )
 
-        # Demander l'arrêt et laisser 2 secondes au processus pour s'arrêter.
+        # Arrêt du conteneur Docker
         stop_url = f"{docker_api_url}/containers/{id}/stop"
         response = requests.post(
             stop_url,
@@ -135,10 +139,7 @@ def stop_container(id: str, role = Depends(require_admin)):
         )
 
         if response.status_code == 304:
-            raise HTTPException(
-                status_code=409,
-                detail="Conteneur déjà arrêté",
-            )
+            raise HTTPException(status_code=409, detail="Conteneur déjà arrêté")
 
         if response.status_code == 404:
             raise HTTPException(
@@ -152,49 +153,40 @@ def stop_container(id: str, role = Depends(require_admin)):
                 detail=f"Erreur de l'API Docker ({response.status_code})",
             )
 
-        # Relire le conteneur après l'arrêt pour obtenir son état réel.
+        # Relecture de l'état réel
         inspect_url = f"{docker_api_url}/containers/{id}/json"
         inspect_response = requests.get(inspect_url, timeout=10)
-
-        if inspect_response.status_code == 404:
-            raise HTTPException(
-                status_code=404,
-                detail="Conteneur introuvable ou non géré",
-            )
-
-        if inspect_response.status_code >= 400:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Erreur de l'API Docker ({inspect_response.status_code})",
-            )
+        inspect_response.raise_for_status()
 
         container = inspect_response.json()
+        nom = container.get("Name", "").lstrip("/")
 
+        # Synchronisation NetBox : VM offline
+        update_vm_status(nom, "offline")
+
+    except HTTPException:
+        raise
     except requests.RequestException as exc:
         raise HTTPException(
             status_code=502,
-            detail="Impossible de communiquer avec l'API Docker",
-        ) from exc
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail="Réponse JSON invalide de l'API Docker",
+            detail="Impossible de communiquer avec Docker ou NetBox",
         ) from exc
 
     return {
         "id": container.get("Id"),
-        "name": container.get("Name", "").lstrip("/"),
+        "name": nom,
         "image": container.get("Config", {}).get("Image"),
         "state": container.get("State", {}).get("Status"),
     }
 
-@app.post("/containers/{id}/start")
-def start_container(id: str, role = Depends(require_admin)):
-    try:
-        # Vérifier que le conteneur existe et qu'il est géré par l'API
-        container = get_container(id)
 
-        if container["state"] == "running":
+# POST /containers/{id}/start
+@app.post("/containers/{id}/start")
+def start_container(id: str, role=Depends(require_admin)):
+    try:
+        container_info = get_container(id)
+
+        if container_info["state"] == "running":
             raise HTTPException(
                 status_code=409,
                 detail="Conteneur déjà démarré",
@@ -207,15 +199,12 @@ def start_container(id: str, role = Depends(require_admin)):
                 detail="DOCKER_API_URL non configurée",
             )
 
-        # Demander le démarrage du conteneur
+        # Démarrage du conteneur Docker
         start_url = f"{docker_api_url}/containers/{id}/start"
         response = requests.post(start_url, timeout=30)
 
         if response.status_code == 304:
-            raise HTTPException(
-                status_code=409,
-                detail="Conteneur déjà démarré",
-            )
+            raise HTTPException(status_code=409, detail="Conteneur déjà démarré")
 
         if response.status_code == 404:
             raise HTTPException(
@@ -229,86 +218,78 @@ def start_container(id: str, role = Depends(require_admin)):
                 detail=f"Erreur de l'API Docker ({response.status_code})",
             )
 
-        # Relire les informations réelles du conteneur
+        # Relecture de l'état réel
         inspect_url = f"{docker_api_url}/containers/{id}/json"
         inspect_response = requests.get(inspect_url, timeout=10)
-
-        if inspect_response.status_code == 404:
-            raise HTTPException(
-                status_code=404,
-                detail="Conteneur introuvable ou non géré",
-            )
-
-        if inspect_response.status_code >= 400:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Erreur de l'API Docker ({inspect_response.status_code})",
-            )
+        inspect_response.raise_for_status()
 
         container = inspect_response.json()
+        nom = container.get("Name", "").lstrip("/")
 
+        # Synchronisation NetBox : VM active
+        update_vm_status(nom, "active")
+
+    except HTTPException:
+        raise
     except requests.RequestException as exc:
         raise HTTPException(
             status_code=502,
-            detail="Impossible de communiquer avec l'API Docker",
-        ) from exc
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail="Réponse JSON invalide de l'API Docker",
+            detail="Impossible de communiquer avec Docker ou NetBox",
         ) from exc
 
     return {
         "id": container.get("Id"),
-        "name": container.get("Name", "").lstrip("/"),
+        "name": nom,
         "image": container.get("Config", {}).get("Image"),
         "state": container.get("State", {}).get("Status"),
     }
 
+
+# DELETE /containers/{id}
 @app.delete("/containers/{id}", status_code=204, response_class=Response)
-def delete_container(id: str, role = Depends(require_admin)):
-    # Vérifie l'existence du conteneur et son label adminapi.managed.
-    # Les HTTPException de get_container, notamment la 404, sont propagées.
+def delete_container(id: str, role=Depends(require_admin)):
     try:
-        get_container(id)
-    except requests.RequestException as exc:
-        raise HTTPException(
-            status_code=502,
-            detail="Impossible de communiquer avec l'API Docker",
-        ) from exc
+        # Vérifier le conteneur et récupérer son nom
+        container_info = get_container(id)
+        nom = container_info["name"]
 
-    docker_api_url = os.getenv("DOCKER_API_URL")
-    if not docker_api_url:
-        raise HTTPException(
-            status_code=500,
-            detail="DOCKER_API_URL non configurée",
-        )
+        docker_api_url = os.getenv("DOCKER_API_URL")
+        if not docker_api_url:
+            raise HTTPException(
+                status_code=500,
+                detail="DOCKER_API_URL non configurée",
+            )
 
-    url = f"{docker_api_url}/containers/{id}"
+        url = f"{docker_api_url}/containers/{id}"
 
-    try:
+        # Suppression du conteneur Docker
         response = requests.delete(
             url,
             params={"force": "true"},
             timeout=30,
         )
+
+        if response.status_code == 404:
+            raise HTTPException(
+                status_code=404,
+                detail="Conteneur introuvable ou non géré",
+            )
+
+        if response.status_code >= 400:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Erreur de l'API Docker ({response.status_code})",
+            )
+
+        # Suppression de la VM dans NetBox
+        delete_vm(nom)
+
+    except HTTPException:
+        raise
     except requests.RequestException as exc:
         raise HTTPException(
             status_code=502,
-            detail="Impossible de communiquer avec l'API Docker",
+            detail="Impossible de communiquer avec Docker ou NetBox",
         ) from exc
 
-    if response.status_code == 404:
-        raise HTTPException(
-            status_code=404,
-            detail="Conteneur introuvable ou non géré",
-        )
-
-    if response.status_code >= 400:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Erreur de l'API Docker ({response.status_code})",
-        )
-
-    # Une réponse 204 ne doit pas avoir de corps.
     return Response(status_code=204)
